@@ -1,0 +1,52 @@
+---
+title: 'Statistics for Data Science, Homework #2'
+date: 'Released: 27/04/2026. Due: 06/05/2026'
+author: 'Veronica Vinciotti, Marco Chierici'
+output: pdf_document
+---
+
+# Instructions
+
+You should submit a single PDF file of the homework via Moodle, with the PDF rendered directly from a Quarto or RMarkdown source file and not converted from any other output format.
+
+# Assignment
+
+For this homework, you will work on diabetes data to investigate the association between disease progression after 1 year from a baseline (`progr`; the higher the value, the worse the progression) and a number of clinical predictors, measured for 442 diabetic patients. The data are available at `db.txt` (tab separated). The explanatory variables are: age, sex, BMI (body mass index), BP (average blood pressure, in mm Hg), TC (total cholesterol, mg/dl), LDL (low-density lipoproteins, mg/dl), HDL (high-density lipoproteins, mg/dl), TCH (ratio between total cholesterol and HDL), TG (triglycerides level, mg/dl, log-scaled), GC (blood glucose, mg/dl).
+
+Your goal is to build and compare tree-based regression models for predicting disease progression from the available clinical variables. Your report should read as a self-contained mini scientific paper, following the guidelines and the feedback provided on the first homework.
+
+In particular, you should address the following points.
+
+## Data exploration
+
+Briefly explore the dataset and discuss any features that are relevant for the modeling phase (e.g., variable distributions, relationships between predictors and outcome, potential collinearity). Be selective: include only summaries and visualizations that inform your subsequent analysis choices.
+
+## Analysis plan
+
+**Before fitting any model, outline your analysis strategy.** This should cover:
+
+- Which tree-based methods you will use and why;
+
+- How you plan to select the complexity of each model (e.g., what hyperparameters need tuning and what approach you will use);
+
+- How you intend to obtain a fair comparison of the models' predictive performance. In particular, explain why simply tuning each model on the full data and comparing training errors is insufficient, and describe the validation strategy you will adopt instead.
+
+Note: keep this section concise; a few sentences per point are sufficient. The bulk of your report should be devoted to the actual analysis and discussion of results.
+
+## Individual model fitting and interpretation
+
+Fit three tree-based regression models to the data: a cost-complexity pruned decision tree, a random forest, and a gradient boosting model. For each model:
+
+- Select the model complexity appropriately and show evidence supporting your choice (e.g., a plot of error vs. complexity parameter).
+
+- Interpret the fitted model: which predictors appear most important, and does this align with what you observed during data exploration?
+
+## Model comparison
+
+Compare the predictive performance of the three methods using the validation strategy you described in your analysis plan. Make sure that model complexity is re-optimized for each training set and explain why this is necessary.
+
+## Conclusions
+
+Summarize your findings. Which method performs best, and is the difference substantial? Are there predictors that consistently emerge as important across methods? Discuss any limitations of your analysis.
+
+Please note that the **maximum allowed number of pages is 10.**

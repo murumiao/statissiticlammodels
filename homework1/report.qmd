@@ -1,0 +1,240 @@
+---
+title: "Homework 1"
+date: today
+author: "Alberto Cimmino, Mat: 266674"
+format:
+  pdf:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE,message=FALSE,tidy.opts=list(width.cutoff = 60),tidy = TRUE)
+```
+
+# Introduction
+
+A cardiovascular study conducted in the US provides a dataset containing 4238 datapoints in order to investigate the possible risk factors associated to the development of coronary heart disease (CHD) within a 10 year period.
+
+The objective of this analysis is to build a classification model for predicting CHD from the following risk factors: $sex$, $age$, $education\ level$, current $smoker$ status, numbers of cigarette per day ($CPD$), previous occurrence of $strokes$ or $hypertension$, presence of $diabetes$, $cholesterol$ level, diastolic blood pressure ($DBP$), body mass index ($BMI$) and $heart rate$.
+
+```{r}
+library(readr);
+library(class);
+library(tidyverse);
+library(ROCR);
+set.seed(2);
+chd <- read_csv("chd.csv");
+```
+
+### Preprocessing
+
+This dataset presents few structural problems, however can be easily fixed. These problems are:
+
+-   **Incompatible variables types**, as logistic regression and k-NN classifier require working with numbers and not characters;
+-   **Missing values**, as the dataset has 204 NAs values. However some of the rows can still be used as the fields will not be used;
+-   **Class imbalance**, This is not surprising since its reflecting data on the development of CHD, which the majority of people won't develop. This will be dealt with by sampling differently the two classes.
+
+```{r}
+#Change variable type
+chd$CHD <- chd$CHD == "Yes"
+chd$sex <- as.numeric(chd$sex == "Male")
+
+#Remove NAs
+ignored_na <- c("smoker", "HTN") # Fields that will not be used
+cols_check <- setdiff(names(chd), ignored_na)
+df <- chd[complete.cases(chd[, cols_check]), ]
+```
+
+### Data exploration
+
+We can start to get a feel on our dataset by looking at:
+
+-   **Class balance**;
+    -   3594 (80%) don't develop CHD
+    -   644 (20%) develop CHD
+-   **Outliners**;
+    -   The only factor with outliers is the one measuring the cholesterol levels, as it ranges a lot, however no datapoints were removed. Summary statistics for cholesterol levels are as follows: Minimum = 113, Median = 234, Mean = 236.7, Maximum = 600;
+-   **Correlation** between the various fields.
+
+```{r, fig.width=3, fig.height=3, fig.cap="Correlation Matrix", fig.alig="center"}
+#| echo: false
+library('corrplot')
+df_tmp <- df[complete.cases(df), ]
+cor_matrix <- cor(df_tmp)
+corrplot(cor_matrix, method = "color", type = "upper", tl.col = "black", tl.srt = 45, mar = c(0, 0, 1, 0), tl.cex = 0.7)
+```
+
+There are two notable correlations: $cpd$-$smoker$ with a correlation coefficient of $0.77$, and $HTN$-$DB$ with a coefficient of $0.61$. These are not a surprise considering their natural connection. In order to avoid multicollinearity, which could cause overfitting and reduce interpretability, of the factors $smoker$ and $HTN$ will be dismissed.
+
+# Analysis plan
+
+### Data split
+
+The data was split in a proportional way, which attempts to address the class imbalance. We collect 8% from the class that does not develop CHD and 2% from the class that develops CHD. These values were found by running many tests.
+
+```{r}
+class0 <- which(df$CHD == FALSE) #Did not develop CHD
+class1 <- which(df$CHD == TRUE) #Did develop CHD
+
+## Sample 8% from the class with no CHD
+train0 <- sample(class0, length(class0) * 0.08)
+## Sample 2% from the class with CHD
+train1 <- sample(class1, length(class1) * 0.02)
+
+trainIndex <- c(train0, train1)
+train_df <- df[trainIndex, ]
+test_df  <- df[-trainIndex, ]
+```
+
+### Chosen classification models
+
+The classification models chosen to identify people with CHD are: Logistic regression and k-NN classifier. These were chosen as the former provides explainability (by looking at the coefficients), while the latter can find patterns in the data and is able to find non-linear relationships.
+
+### Evaluation and comparison
+
+In order to compare them, we chose to compute the confusion matrix of the models. Models with low False Negatives (FN) and high True Negatives (TN) are preferred, because in this context, missing a case of CHD could be dangerous. False Positive (FP) are less critical as it will only lead to a follow-up testing phase.
+
+# Logistic regression
+
+A logistic regression model is a statistical model used for estimating the parameters of a logistic model.
+
+Let the binary dependent variable $Y$ represent the presence or absence of Coronary Heart Disease (CHD). With $Y=1$ if CHD is present and $Y=0$ otherwise.
+
+The logistic regression model estimates the probability of $Y=1$ as a function of the independent variables (risk factors). The model is defined as: $$
+P(Y = 1 \mid X) = \frac{1}{1 + e^{-(\beta_0 + \beta_1 X_1 + \beta_2 X_2 + \dots + \beta_p X_p)}}
+$$ Where:
+
+-   $( \beta_1, \beta_2, \dots, \beta_p )$ are the coefficients for the predictors
+-   $( X_1, X_2, \dots, X_p )$ the independent variables.
+
+Let analyse the coefficients of the following model:
+
+```{r}
+#| echo: false
+glm.fits <- glm(CHD ~ sex+age+education+smoker+stroke+diabetes+chol+DBP+BMI+HR, data=train_df, family = binomial)
+summary(glm.fits)
+```
+
+Stronger predictors of CHD will have higher coefficients, so, from that table we can tell that $sex$, $age$ and $DBP$ are the main 3 predictors. Let us calculate their log-odds
+
+| Factor | Log-odds | Interpretation |
+|:-----------------:|:-----------------:|:----------------------------------|
+| $sex$ | $e^{1.785}\cong 5.96$ | The male sex is almost 6 times more likely to develop CHD |
+| $age$ | $e^{0.170}\cong 1.19$ | Each year increases by $19\%$ the possibility of developing CHD |
+| $DBP$ | $e^{0.051}\cong 1.051$ | Each 1 mmHg in DBP increases by $4\%$ the possibility of developing CHD |
+
+Other coefficients such as $education$, $BMI$ and $HR$ are not considered strong indicators.
+
+# k-NN Classifier
+
+A k-Nearest Neighbors (k-NN) classifier is a non-parametric, instance-based learning method used for classification and regression.
+
+Let us use the same definition of the binary dependent variable $Y$ as before, and let $X=( X_1, X_2, \dots, X_p )$ be the vector of predictor variables and let's fix $k\in \mathbb{N}$.
+
+The k-NN classifier given a new observation $x$ will compute the distances between $x$ and every other datapoint in the classifier, and then will classify $x$ based on the classes of the $k$ nearest neighbors.
+
+k-NN classifier relies heavily on the parameter $k$ and the datapoints locations, so it requires more preprocessing.
+
+For starter, lets prepare the two dataset.
+
+```{r}
+y_train <- train_df$CHD
+x_train <- train_df[, setdiff(names(train_df), "CHD")]
+x_test  <- test_df[, setdiff(names(test_df), "CHD")]
+x_train <- model.matrix(~ . -1, data = x_train)
+x_test  <- model.matrix(~ . -1, data = x_test)
+y_train <- as.factor(y_train)
+```
+
+Then we scale the datapoints as to scale down the importance of the factors with high values (like $chol$) compared to factors with low values (like $BMI$)
+
+```{r}
+#Scale 
+x_train <- scale(x_train)
+x_test  <- scale(x_test,
+                 center = attr(x_train, "scaled:center"),
+                 scale  = attr(x_train, "scaled:scale"))
+```
+
+In order to tune $k$ the best way is to test many and find the best performing one. We then found that $k=4$ is where our classifier run better.
+
+# Model Comparison
+
+### Confusion Matrix
+
+```{r}
+#| echo: false
+glm.probs <- predict(glm.fits, test_df, type="response" )
+glm.pred  <- rep(FALSE, nrow(test_df))
+glm.pred[glm.probs > 0.2] <- TRUE
+table(glm.pred, test_df$CHD)
+
+knn.pred <- knn(x_train, x_test, cl = y_train, k = 4)
+table(knn.pred, test_df$CHD)
+```
+
+By looking at these tables, we can immediately see that the Logistical Regression model is performing better than the k-NN one. However, its worth analyzing them further by computing the sensitivity and the specificity.
+
+|  |  |  |
+|----|:--:|:--:|
+|  | **Sensitivity** | **Specificity** |
+| **Logistical Regression** | $\frac{101}{101+193}\cong 0.34$ | $\frac{2966}{2466+493}\cong 0.85$ |
+| **k-NN Classifier** | $\frac{14}{14+21}\cong 0.40$ | $\frac{3138}{3138+580}\cong 0.84$ |
+
+Logistical Regression is able to identify around 35% of the cases with CHD and around 85% of the healthy cases. The ability of guessing the healthy cases is less important since the "Majority Class Guesser" model will perform better as most people won't develop CHD. However, the ability of detecting at 35% if the person will develop CHD is a good result, even if it could be higher.
+
+The k-NN classifier is in a quite different state. The issue with this classifier is that it rarely actually detects CHD, indicating that it is not learning meaningful boundaries, possibly due to the class imbalance. However, since it answers quite frequently with a "YES" answer, it is able to correctly determine the developing of CHD in 40% of the cases.
+
+### ROC curve
+
+By looking at the following ROC curves, we can see that the Logistic Regression provides a better discrimination than k-NN, with a AUC of $73.11\%$ compared to $56.9\%$ of k-NN. However, there is still room for improvements as there is still much room left from the top-left corner.
+
+```{r}
+#| echo: false
+logit <- glm(CHD ~ ., data = df, family = binomial)
+prob <- predict(logit, type = "response")
+pred <- prediction(prob, df$CHD)
+perf <- performance(pred, "tpr", "fpr")
+plot(perf, col = "blue", lwd = 2)
+abline(a = 0, b = 1, lty = 2, col = "gray")
+auc <- performance(pred, "auc")@y.values[[1]]
+auc
+```
+
+```{r}
+#| echo: false
+train_df <- train_df[complete.cases(train_df), ]
+test_df  <- test_df[complete.cases(test_df), ]
+y_train <- factor(train_df$CHD)
+y_test  <- factor(test_df$CHD)
+x_train <- train_df[, setdiff(names(train_df), "CHD")]
+x_test  <- test_df[, setdiff(names(test_df), "CHD")]
+x_train <- model.matrix(~ . - 1, data = x_train)
+x_test  <- model.matrix(~ . - 1, data = x_test)
+x_train <- scale(x_train)
+x_test  <- scale(x_test,
+                 center = attr(x_train, "scaled:center"),
+                 scale  = attr(x_train, "scaled:scale"))
+y_test_numeric <- ifelse(test_df$CHD, 1, 0)
+knn.pred <- knn(x_train, x_test, cl=y_train, k=4, prob=TRUE)
+
+knn.probs <- attr(knn.pred, "prob")
+knn.probs <- ifelse(knn.pred == "TRUE", knn.probs, 1 - knn.probs)
+
+knn.probs <- as.numeric(knn.probs)
+
+pred_knn <- prediction(knn.probs, y_test_numeric)
+
+perf_knn <- performance(pred_knn, "tpr", "fpr")
+plot(perf_knn, col="red", lwd=2, main="ROC Curve for KNN")
+abline(a=0, b=1, lty=2, col="gray")
+auc_knn <- performance(pred_knn, measure="auc")@y.values[[1]]
+auc_knn
+
+```
+
+# Conclusion
+
+The results show that logistic regression outperforms the k-NN classifier on the detection of CHD in this dataset, but both models remain limited. The performances of the logistic regression does still lack enough quality to be considered good at this task and it would require more tuning before reaching any real-world scenarios. Many of the problems probably arise from the class imbalance which has an impact on the performances of the models.
+
+Future works could explore resampling techniques, other strategies for preparing the data being fed to the models and data analysis.

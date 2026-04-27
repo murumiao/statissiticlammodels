@@ -1,0 +1,45 @@
+---
+title: "Homework 2"
+date: today
+author: "Alberto Cimmino, Mat: 266674"
+format:
+  pdf:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE,message=FALSE,tidy.opts=list(width.cutoff = 60),tidy = TRUE)
+```
+
+# Introduction
+
+### Preprocessing
+
+### Data exploration
+
+# Analysis plan
+
+### Tree based methods used (with complexity (hyperparam & approach to tune))
+
+### How to compare models fairly ()
+
+explain why simply tuning each model on the full data and comparing training errors is insufficient, and describe the validation strategy you will adopt instead
+
+# Cost-complexity Pruned Decision Tree
+
+- Select the model complexity appropriately and show evidence supporting your choice (e.g., a plot of error vs. complexity parameter).
+- Interpret the fitted model: which predictors appear most important, and does this align with what you observed during data exploration?
+
+# Random Forest
+
+- Select the model complexity appropriately and show evidence supporting your choice (e.g., a plot of error vs. complexity parameter).
+- Interpret the fitted model: which predictors appear most important, and does this align with what you observed during data exploration?
+
+# Gradient Boosting Model
+
+- Select the model complexity appropriately and show evidence supporting your choice (e.g., a plot of error vs. complexity parameter).
+- Interpret the fitted model: which predictors appear most important, and does this align with what you observed during data exploration?
+
+# Model Comparison
+
+# Conclusion
