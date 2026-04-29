@@ -1,0 +1,559 @@
+---
+title: 'Statistics for Data Science, Lab #4: Ridge & Lasso, Trees & Forests'
+author: "Marco Chierici"
+date: "April 27, 2026"
+format:
+    html:
+        theme: cosmo
+        df-print: paged
+        toc: true
+        toc-location: left
+knitr:
+    opts_chunk:
+        warning: false
+        message: false
+        tidy: true
+        tidy.opts:
+            width.cutoff: 60
+editor_options:
+  chunk_output_type: console
+---
+
+```{r}
+library(conflicted)
+conflicts_prefer(dplyr::select()) #preferisci questo package rispetto ad altre, quando ci sono due funzioni con lo stesso nome
+```
+
+# Shrinkage methods
+
+[In the textbook: Section 6.5.2]
+
+We will use the `glmnet` package to perform ridge regression and the lasso. The main function in this package is `glmnet()`, which has slightly different syntax from other model-fitting functions that we have seen so far. In particular, we must pass in an $x$ matrix as well as a  $y$  vector, and **we do not use the `y~x` syntax**.
+
+We will work on the `Hitters` data set, which we already know from last Lab. First, after loading the data set we want to ensure that we filter out all missing values: from the last lab, we remember that only `Salary` had missing values. To remove missing values, this time we'll use the `na.omit()` function:
+
+```{r}
+library(tidyverse)
+library(ISLR2)
+library(glmnet)
+dataf <- na.omit(Hitters)
+```
+
+Then, we will perform ridge regression and the lasso to predict `Salary`. Let's set up our $x$ and $y$ data:
+
+```{r}
+x <- model.extract('Salary', dataf)
+y <- dataf
+```
+
+
+
+## Ridge regression
+
+The `alpha` argument in `glmnet()` determines what type of model is fit.
+
+- If `alpha = 0`, a *ridge regression* model is fit; 
+- If `alpha = 1`, a *lasso* model is fit.
+
+We first fit a ridge regression model:
+
+```{r}
+grid <- 10^seq(10, -2, length=100)#covering all models 
+ridge_mod <- glmnet(x, y, alpha=0, lambda=grid)
+```
+
+By default the `glmnet()` function performs ridge regression for an automatically selected range of $\lambda$ values. However, the textbook has chosen to implement the function over a grid of values ranging from  $\lambda=10^{10}$ to  $\lambda=10^{−2}$, essentially covering the full range of scenarios from the null model containing only the intercept, to the least squares fit.
+
+
+Associated with each value of $\lambda$ is a vector of ridge regression coefficients, stored in a matrix that can be accessed by `coef()`. 
+
+```{r}
+dim(coef(ridge_mod))
+plot(ridge_mod) # plot the coefficients vs log lambda # più interessante dei due
+plot(ridge_mod, xvar="norm") # coefficients vs their L1 norm
+```
+
+We expect the coefficient estimates to be much smaller, in terms of $l_2$ norm, when a large value of  $\lambda$  is used, as compared to when a small value of  $\lambda$ is used. These are the coefficients when  $\lambda \approx 11,498$ (50th value of the grid), along with their $l_2$ norm:
+
+```{r}
+ridge_mod$lambda[50] # display the 50th lambda value # in questo caso grid[50]==questo. Perché lo abbiamo passato noi.
+
+log(ridge_mod$lambda[50])
+coef(ridge_mod)[, 50] # display coefficients associated with 50th lambda value
+sqrt(sum(coef(ridge_mod)[-1, 50]^2)) # calculate l2 norm
+```
+
+
+In contrast, here are the coefficients when  $\lambda \approx 705$ (60th value of the grid), along with their $l_2$  norm. Note the much larger $l_2$ norm of the coefficients associated with this smaller value of $\lambda$.
+
+```{r}
+ridge_mod$lambda[60] # display the 60th lambda value
+log(ridge_mod$lambda[60])
+coef(ridge_mod)[, 60] # display coefficients associated with 60th lambda value
+sqrt(sum(coef(ridge_mod)[-1, 60]^2)) # Calculate l2 norm
+```
+
+We can use the `predict()` function for a number of purposes. 
+
+```{r}
+#'s' sarebbe 'lambda'
+predict(ridge_mod, type="coefficients", s=50)[1:20, ]
+```
+
+
+We now split the samples into training and test sets to estimate the test error of ridge regression (and, later, the lasso).
+
+```{r}
+set.seed(1)
+train <- sample(1:nrow(x), nrow(x)/2) #50/50
+test <- -train
+y_test <- y[test]
+```
+
+For consistency, let's also create train/test matrices for the data, plus a train vector for the labels:
+
+```{r}
+x_train <- model.matrix(Salary ~ ., dataf[train, ])[, -1]
+x_test <- model.matrix(Salary ~ ., dataf[-train, ])[, -1]
+
+y_train <- y[train]
+```
+
+Next we fit a ridge regression model on the training set, and evaluate its MSE on the test set, using $\lambda=4$. 
+
+```{r}
+#grid gestita da R
+ridge_mod <- glmnet(x_train, y_train, alpha=0)
+ridge_pred <- predict(ridge_mod, newx=x_test, s=4)#lambda non ancora ottimale, messo custom
+
+ridge_pred - y_test # difference prediction and ground trutuh
+
+mean((ridge_pred - y_test)^2) # mean squared error
+```
+
+The automatically computed $\lambda$ grid is stored in `ridge_mod$lamdba`.
+
+Note that if we had instead simply fit a model with just an intercept, we would have predicted each test observation using the mean of the training observations. In that case, we could compute the test set MSE like this:
+
+```{r}
+mean(mean(y_train)-y_test)^2 # Null model: predicts the average
+
+# we are outperforming it. Good!
+
+```
+
+We could also get the same result by fitting a ridge regression model with a very large value of $\lambda$:
+
+```{r}
+ridge_pred <- predict(ridge_mod, newx=x_test, s=1e10)
+mean((ridge_pred - y_test)^2)
+
+```
+
+---
+
+Since we'll compute a lot of MSEs, let's define a function for that!
+
+```{r}
+compute_mse <- function(preds, truth) {
+    mean((preds - truth)^2)
+}
+```
+
+---
+
+We now check whether there is any benefit to performing ridge regression with $\lambda=4$ instead of just performing least squares regression.
+
+```{r}
+ # lambda==0 -> least squares regression
+ridge_pred <- predict(ridge_mod, s=0, newx=x_test, exact=TRUE, x=x_train, y=y_train)
+compute_mse(ridge_pred, y_test)
+
+lm(Salary ~ ., data=dataf, subset=train)
+predict(ridge_mod, s=0, exact=TRUE, type="coefficients", x=x_train, y=y_train)[1:20, ]
+```
+
+
+Instead of arbitrarily choosing $\lambda=4$, it would be better to use cross-validation to choose the tuning parameter $\lambda$. We can do this using the built-in cross-validation function, `cv.glmnet()`.
+
+Since we previously fit a ridge model with automatic selection of the $\lambda$ grid, we can pass the same grid to `cv.glmnet()`:
+
+```{r}
+set.seed(1)
+# fit ridge regression model on training data, using the lambda grid from the previously fitted model
+cv.out <- cv.glmnet(x_train, y_train, alpha=0, lambda=ridge_mod$lambda)
+# select lambda that minimizes training MSE
+bestlam <- cv.out$lambda.min 
+bestlam
+```
+
+We can also plot the MSE as a function of $\lambda$:
+
+```{r}
+# draw plot of training MSE as a function of lambda
+plot(cv.out) #the vertical lines, one minimizes lambda(bestlam, at 326) and one is the cv.out.$lambda.1se, aka the second best lambda which is within 1 se from bestlam
+```
+
+
+What is the test MSE associated with this value of $\lambda$?
+
+```{r}
+ridge_pred <- predict(ridge_mod, newx=x_test, s=bestlam)
+compute_mse(ridge_pred, y_test) #Improvement!
+```
+
+This represents a further improvement over the test MSE that we got using  $\lambda=4$! Finally, we refit our ridge regression model on the full data set, using the value of $\lambda$ chosen by CV, and examine the coefficient estimates.
+
+```{r}
+out <- glmnet(x,y, alpha=0)
+predict(out, type="coefficients", s=bestlam)[1:20, ]#first 20 rows and all cols
+
+
+#use ridge-regression when all are important and when [BOH]
+```
+
+
+## The Lasso
+
+
+In order to fit a lasso model, we use the `glmnet()` function as before, this time using the argument `alpha=1`:
+
+```{r}
+# fit lasso model on training data - again we let the function compute the lambda grid
+lasso_mod <- glmnet(x_train, y_train, alpha=1)
+
+plot(lasso_mod)
+plot(lasso_mod, xvar="norm")
+```
+
+We now perform cross-validation (`cv.glmnet()`) and compute the associated test error:
+
+```{r}
+set.seed(1)
+cv.out <- cv.glmnet(x_train, y_train, alpha=1, lambda=lasso_mod$lambda )
+plot(cv.out)#top-row is now nnz coefficients. aka Lasso shrunks some coefficients depending on lambda
+
+bestlam <- cv.out$lambda.min
+lasso_pred <- predict(lasso_modd, newx=x_test, s=bestlam)
+compute_mse(lasso_pred, y_test)
+```
+
+
+Here we see that 10 of the 19 coefficient estimates are exactly zero:
+
+```{r}
+# fit lasso model on full dataset
+out <- glmnet(x, y, alpha=1)
+# display coefficients using lambda chosen by CV
+lasso_coef <- predict(out, type="coefficients", s=bestlam)[1:20, ]
+lasso_coef
+```
+
+
+```{r}
+# display only non-zero coefficients
+lasso_coef[lasso_coef != 0]
+```
+
+
+# Decision trees
+
+[In the textbook: Section 8.3]
+
+## Fitting classification trees
+
+
+```{r}
+library(tree) # install.packages("tree") 
+```
+
+We start by analyzing the `Carseats` data set, containing simulated observations of sales of child car seats at 400 different stores.
+
+```{r}
+data(Carseats)
+head(Carseats)
+```
+
+The `Sales` variable represents the unit sales, in thousands, at each location. Since it is continuous, we binarize it in order to fit a classification model: we pick a threshold of 8 and the binarized variable is thus "No" if $Sales <= 8$ and "Yes" if $Sales > 8$.
+
+
+```{r}
+x <- as_tibble(Carseats) %>% 
+    mutate(High = cut(Sales, c(-Inf, 8, Inf), c("No", "Yes"))) %>% 
+    select(-Sales)#remove original col
+# c(-Inf, 8, Inf) is a vector of cut points (length: L); #define cut-points (-Inf, 8),(8,+Inf)
+# c("No", "Yes") is a vector of category labels (length: L-1)
+x$High
+```
+
+
+Next, we fit a classification tree to predict `High` using all variables except `Sales` (which we already excluded from `x`):
+
+```{r}
+tree.carseats <- tree(High~., data=x)
+summary(tree.carseats)
+```
+
+The training error ("misclassification error rate") is 9%. The "residual mean deviance" is the deviance (170.7) divided by $n-|T_0|$ (number of observations minus number of terminal nodes), which is $400-27=373$.
+
+***
+
+The parameters for the tree (e.g., minimum number of observations to include in child nodes; smallest allowed node size) are set by the option `control` inside `tree()`: by default `control=tree.control()`. To know exactly which are its default parameters, you can have a look at its help (`?tree.control`).
+
+A cool property of trees is their interpretability. In fact, we can graphically display them!
+
+```{r}
+plot(tree.carseats)
+text(tree.carseats, pretty=0) # add node labels
+title(main="Carseats: Unpruned classification tree")
+```
+
+The Yes and No at the bottom show if the observation should be classified as "High sales" (Yes) or "Low sales" (No).
+Each split can be read as true to the left and false to the right.
+
+The most important predictor (at the root of the tree) is the shelving location `ShelveLoc`, followed by `Price`. We can examine the whole tree by displaying it in text mode, just by typing the name of the tree object:
+
+```{r}
+tree.carseats
+```
+
+For each node, R displays the split criterion, the number of observations in the branch, the deviance, the overall branch prediction, and class probabilities (note that they follow the `x$High` factor ordering, which is `No`, `Yes`).
+
+To stimate the test error, we split the observations into a training and a testing partition, fit the tree on the training, and evaluate it on the testing, using the `predict()` function with the argument `type="class"`.
+
+```{r}
+set.seed(2)
+train <- sample(1:nrow(x), 200)
+x.test <- x[-train, ]
+High.test <- x.test$High
+
+tree.carseats <- tree(High ~ ., x, subset=train)
+tree.pred <- predict(tree.carseats, x.test, type="class")
+table(tree.pred, High.test) # confusion matrix
+mean(tree.pred == High.test) # accuracy on test
+mean(tree.pred != High.test) # prediction error on test
+```
+
+
+Maybe *pruning* the tree can have beneficial effects on its performance: we evaluate this using a cross-validation approach with the function `cv.tree()` and the argument `FUN=prune.misclass`, meaning that the number of misclassifications has to guide the CV and pruning process. The default is using `FUN=prune.tree`, which bases the pruning process on the deviance (entropy) and is the only possible choice for regression trees.
+
+
+```{r}
+set.seed(7)
+cv.carseats <- cv.tree(object=tree.carseats, FUN=prune.misclass)
+names(cv.carseats) #dev==deviance==error rate
+cv.carseats
+```
+
+
+We can visualize the error rate as a function of both `size` and `k`:
+
+```{r}
+op <- par(mfrow=c(1, 2))
+plot(cv.carseats$size, cv.carseats$dev, type="b") #check lowest dev (64, at size of 9 nodes)
+plot(cv.carseats$k, cv.carseats$dev, type="b")
+par(op)
+```
+
+Now that we found the optimal number of terminal nodes, we can use the `prune.misclass()` function to obtain the pruned tree:
+
+```{r}
+opt_size <- cv.carseats$size[which.min(cv.carseats$dev)]
+opt_size
+
+prune.carseats <- prune.misclass(tree.carseats, best=opt_size)
+```
+
+```{r}
+plot(prune.carseats)
+text(prune.carseats, pretty=0)
+title(main="Carseats: Pruned classification tree")
+```
+
+
+```{r}
+tree.pred <- predict(prune.carseats, x.test, type="class")
+table(tree.pred, High.test)
+mean(tree.pred==High.test) # accuracy # Basically the same, is it worth it? Yes, if we want a more understandable tree. otherwise not
+```
+
+
+
+```{r}
+prune.carseats <- prune.misclass(tree.carseats, best=14) #prune at a custom level (14)
+
+plot(prune.carseats)
+text(prune.carseats, pretty=0)
+
+tree.pred <- predict(prune.carseats, x.test, type="class")
+table(tree.pred, High.test)
+mean(tree.pred==High.test) # accuracy
+```
+
+## Fitting Regression Trees
+
+
+```{r}
+library(MASS)
+data("Boston", package="ISLR2") # we specify the package source to avoid conflicts
+head(Boston)
+```
+
+Here we want to predict `medv`, the median value of owner-occupied homes. We first split the data in two halves for training and testing.
+
+```{r}
+library(rsample)
+set.seed(1)
+boston_split <- initial_split(Boston, prop=0.5)
+x_train <- training(boston_split)
+x_test <- testing(boston_split)
+y_test <- x_test$medv
+
+
+tree_boston <- tree(medv ~ ., x_train)
+summary(tree_boston)#see most important cols
+```
+
+
+
+```{r}
+plot(tree_boston)
+text(tree_boston, pretty=0)
+title(main="Boston: Unpruned regression tree")
+```
+
+
+Does pruning the tree impact on the performance? Let's use `cv.tree()` once again.
+
+```{r}
+cv.boston <- cv.tree(tree_boston)
+plot(cv.boston$size, cv.boston$dev, type="b")
+```
+
+
+
+```{r}
+prune_boston <- prune.tree(tree_boston, best=5)
+plot(prune_boston)
+text(prune_boston, pretty=0)
+title(main="Boston: Pruned regression tree")
+```
+
+
+
+```{r}
+yhat <- predict(tree_boston, newdata=x_test)
+plot(yhat, y_test)
+abline(0, 1)
+```
+
+
+```{r}
+compute_mse(yhat, y_test)
+sqrt(compute_mse(yhat, y_test))
+```
+
+
+# Bagging and Random Forests
+
+Bagging and random forests are implemented in the `randomForest` R library. 
+
+We start with a bagging example on `Boston` data, using the training and testing partitions that we computed previously.
+
+Your results may vary depending on your versions of R and `randomForest`.
+
+```{r}
+library(randomForest)
+set.seed(1)
+n_pred <- ncol(Boston) - 1
+# bagging on the training portion of Boston:
+
+
+```
+
+
+```{r}
+yhat.bag <- predict(bag.boston, newdata=x_test)
+plot(yhat.bag, y_test)
+abline(0, 1)
+compute_mse(yhat.bag, y_test)
+```
+
+
+It is possible to change the number of trees using the `ntree` argument in `randomForest()`:
+
+```{r}
+bag.boston <- randomForest(medv ~ ., data=x_train, mtry=n_pred, importance=TRUE, ntree=25)
+yhat.bag <- predict(bag.boston, newdata=x_test)
+plot(yhat.bag, y_test)
+abline(0, 1)
+compute_mse(yhat.bag, y_test)
+```
+
+We can grow a more general **random forest** by using smaller values of the `mtry` argument. 
+
+```{r}
+set.seed(1)
+rf.boston <- randomForest(medv ~ ., data=x_train, mtry=6, importance=TRUE)
+yhat.rf <- predict(rf.boston, newdata=x_test)
+compute_mse(yhat.rf, y_test)
+```
+
+
+We can check out how important each predictor is by using the `importance()` function:
+
+```{r}
+knitr::kable(importance(rf.boston))
+# use knitr::kable() in Quarto or Rmd to output pretty tables
+```
+
+
+To neatly plot these importance measures we use the `varImpPlot()` function:
+
+```{r}
+varImpPlot(rf.boston)
+```
+
+***
+
+# Boosting
+
+For this part of the lab, we will use the `gbm` package and its `gbm()` function to fit **boosted regression trees** to the `Boston` data. The regression task requires that we use the option `distribution="gaussian"`; if we were dealing with a binary classification task, we would use `distribution="bernoulli"` (other choices are available for different scenarios, which `gbm` will try to guess if you do not specify an option). We can access the relative influence statistics using the `summary()` function on the fitted model, which also generates a bar plot.
+
+```{r}
+
+
+```
+
+
+
+We can evaluate the **marginal effect** of the top two variables by producing a partial dependence plot.
+
+```{r}
+plot(boosted, i="rm")
+plot(boosted, i="lstat")
+```
+
+
+According to the textbook, a "partial dependence plot" highlights "the marginal effect of the selected variables on the response after *integrating* out the other variables". 
+
+---
+
+How well does this boosted regression tree perform on the test set?
+
+```{r}
+yhat.boost <- predict(boosted, newdata=x_test, n.trees=5000)
+compute_mse(yhat.boost, y_test)
+```
+
+
+Let's see if we can improve the performance by changing the shrinkage parameter ($\lambda$) from the default of 0.001 to 0.2:
+
+```{r}
+boosted <- gbm(medv ~ ., data=x_train, distribution="gaussian",
+               n.trees=5000, interaction.depth=4,
+               shrinkage=0.2, verbose=F)
+yhat.boost2 <- predict(boosted, newdata=x_test, n.trees=5000)
+compute_mse(yhat.boost2, y_test)
+```
+
