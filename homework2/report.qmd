@@ -21,6 +21,14 @@ knitr::opts_chunk$set(warning=FALSE,message=FALSE,tidy.opts=list(width.cutoff = 
 
 ### Tree based methods used (with complexity (hyperparam & approach to tune))
 
+In this paper, we will use three different regression models for predicting disease progression:
+
+- Cost-complexity pruned decision tree:
+
+- Random Forest:
+
+- Gradient Boosting:
+
 ### How to compare models fairly ()
 
 explain why simply tuning each model on the full data and comparing training errors is insufficient, and describe the validation strategy you will adopt instead

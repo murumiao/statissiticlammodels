@@ -1,3 +1,4 @@
+rm(list=ls()) 
 # Load Dataset ------------------------------------------------------------
 {
     library(tidyverse)
@@ -5,40 +6,72 @@
     library(glmnet)
     library(readr)
     library(tree)
+    library(randomForest)
+    library(gbm)
+    library(rsample)
 }
 {
-    dataf <<- read_delim("db.txt",delim = "\t", escape_double = FALSE, trim_ws = TRUE )
+    dataf <- read_delim("db.txt",delim = "\t", escape_double = FALSE, trim_ws = TRUE)
+
 }
-#View(dataf)
-head(dataf)
 
 
 # Data Preprocessing ------------------------------------------------------
 
-
 # Data Exploration --------------------------------------------------------
+colSums(is.na(dataf)) #0
 
-cor(dataf)
+summary(dataf)
 
-library('corrplot')
-cor_matrix <- cor(dataf)
-corrplot(cor_matrix, method = "color", type = "upper", tl.col = "black", tl.srt = 45, mar = c(0, 0, 1, 0), tl.cex = 0.7)
-# Nota: HDL (TCH)con tutto, CD-LDL
+sapply(dataf, sd, na.rm = TRUE)
 
+
+# Correlation matrix
+cor_matrix <- cor(dataf, use = "complete.obs")
+cor_matrix
+# Visualize the correlation matrix
+library(corrplot)
+corrplot(cor_matrix, method = "color", type = "upper", tl.col = "black", tl.srt = 45, tl.cex = 0.7)
+# Focus su variabili correlate con porogr (BMI BP, HDL, TG)
+
+
+# Histogram for each numeric variable
+dataf %>%
+    select(where(is.numeric)) %>%
+    pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value") %>%
+    ggplot(aes(x = Value)) +
+    geom_histogram(bins = 20, fill = "skyblue") +
+    facet_wrap(~ Variable, scales = "free") +
+    theme_minimal() +
+    labs(title = "Distributions of Numeric Variables")
+
+
+# Boxplots for numeric variables
+dataf %>%
+    select(where(is.numeric)) %>%
+    pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value") %>%
+    ggplot(aes(x = Variable, y = Value)) +
+    geom_boxplot(fill = "lightblue") +
+    theme_minimal() +
+    labs(title = "Boxplots for Numeric Variables")
 
 # Data Split --------------------------------------------------------------
 {
     set.seed(1)
     
-    x <- model.matrix(progr ~ ., data=dataf)[, -12] # trim off the last column (i.e., keep only the predictors)
-    y <- dataf$progr
-    train <- sample(1:nrow(x), nrow(x)/2)
-    test <- -train # numerical indexes, so we complement with -
-    y_test <- y[test]
+    train_idx <- sample(seq_len(nrow(dataf)), size = 0.5 * nrow(dataf))
     
-    x_train <<- x[train, ]
-    y_train <<- y[train]
+    train_df <- dataf[train_idx, ]
+    test_df  <- dataf[-train_idx, ]
     
-    x_test <<- x[test, ]
+    train_df$progr <- as.numeric(train_df$progr)
+    test_df$progr <- as.numeric(test_df$progr)
 }
+
+
+# Functions ---------------------------------------------------------------
+compute_mse <- function(preds, truth) {
+    mean((preds - truth)^2)
+}
+
 
