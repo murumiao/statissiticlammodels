@@ -31,6 +31,9 @@ In this paper, we will use three different regression models for predicting dise
 
 ### How to compare models fairly ()
 
+For random forest and gradient boosting, discuss the variable importance results and whether they align with the data exploration findings.
+
+
 explain why simply tuning each model on the full data and comparing training errors is insufficient, and describe the validation strategy you will adopt instead
 
 # Cost-complexity Pruned Decision Tree
