@@ -8,38 +8,142 @@ format:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(warning=FALSE,message=FALSE,tidy.opts=list(width.cutoff = 60),tidy = TRUE)
+knitr::opts_chunk$set(warning=FALSE,message=FALSE,tidy.opts=list(width.cutoff = 90),tidy = TRUE)
 ```
 
 # Introduction
 
-### Preprocessing
+In this paper, we will investigate the association between disease progression after 1 year from a baseline(stored in variable $progr$) on 442 diabetic patients. The dataset used contains the following variables:
+
+| Variable name | Explanation                               |
+|:-------------:|-------------------------------------------|
+|     $age$     | Age of patients                           |
+|     $sex$     | Sex of patients                           |
+|     $BMI$     | Body mass index                           |
+|     $BP$      | average blood pressure \[mmHg\]           |
+|     $TC$      | total cholesterol \[mg/dl\]               |
+|     $LDL$     | low-density lipoproteins \[mg/dl\]        |
+|     $HDL$     | high-density lipoproteins \[mg/dl\]       |
+|     $TCH$     | ratio between total cholesterol and $HDL$ |
+|     $TG$      | triglycerides level \[mg/dl, log-scaled\] |
+|     $GC$      | blood glucose \[mg/dl\]                   |
 
 ### Data exploration
+
+In order to have some idea of our dataset, we can see the `summary` of it.
+
+```{r}
+ # Load Dataset
+library(readr)
+dataf <- read_delim("db.txt",delim = "\t", escape_double = FALSE, trim_ws = TRUE)
+```
+
+From the following bar plot, we can get a visual sense of our dataset.
+
+```{r}
+#| echo: false
+library(tidyverse)
+dataf %>%
+    select(where(is.numeric)) %>%
+    pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value") %>%
+    ggplot(aes(x = Value)) +
+    geom_histogram(bins = 30, fill = "skyblue") +
+    facet_wrap(~ Variable, scales = "free") +
+    theme_minimal()
+```
+
+From the following box-plot we can have a better look at outliers. Note that there are some, which may represent patients with severe health conditions. We chose to not remove them as they real and important cases and are able to bring valuable information. However, it is important to acknowledge their influence on the models.
+
+```{r}
+#| echo: false
+# Boxplots for numeric variables
+dataf %>%
+  select(where(is.numeric)) %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value") %>%
+  ggplot(aes(x = Variable, y = Value)) +
+  geom_boxplot(fill = "lightblue") +
+  theme_minimal() +
+  labs(title = "Boxplots for Numeric Variables")
+```
+
+And by looking at the correlation matrix between the predictors, we can note that in general, there are two pairs of predictors that are highly correlated $TC$-$LDL$ at $0.897$ and $TCH$-$LDL$ at $0.660$. These predictors could affect the interpretability of the decision tree model, while random forests and gradient boosting models will be more unaffected due to their robust structure. The predictors with higher correlation to $progr$ are, in order: $BMI$ ($0.586$), $TG$ ($0.566$), $BP$ ($0.441$) and $TCH$ ($0.430$), and is likely they will play a significant role in the models.
+
+```{r, fig.width=3, fig.height=3, fig.cap="Correlation Matrix", fig.alig="center"}
+#| echo: false
+# Correlation matrix
+cor_matrix <- cor(dataf, use = "complete.obs")
+# Visualize the correlation matrix
+library(corrplot)
+corrplot(cor_matrix, method = "color", type = "upper", tl.col = "black", tl.srt = 45, tl.cex = 0.7)
+```
+
+### Preprocessing
+
+```{r}
+set.seed(1)
+
+# Split Training and Testing 
+train_idx <- sample(seq_len(nrow(dataf)), size = 0.5 * nrow(dataf)) # 50/50 split
+train_df <- dataf[train_idx, ]
+test_df  <- dataf[-train_idx, ]
+
+# Define useful functions
+compute_mse <- function(preds, truth) {
+    mean((preds - truth)^2)
+}
+```
 
 # Analysis plan
 
 ### Tree based methods used (with complexity (hyperparam & approach to tune))
 
-In this paper, we will use three different regression models for predicting disease progression:
+In this paper, we will use three different regression models for predicting disease progression.
 
-- Cost-complexity pruned decision tree:
+1.  **Cost-complexity pruned decision tree**: this model is simple and interpretable, allowing non-specialized (????) people to understand the reasons of the outcome. This model has only one hyper-parameter that needs to be tuned, the number of trees and we will use cross-validation in order to find it;
 
-- Random Forest:
+2.  **Random Forest**: this model is less prone to overfitting compared to the decision tree as it averages predictions from multiple results, and is able to capture more complex interactions between the predictors. This model requires the tuning of two hyper-parameters: the number of predictors selected at each split and the number of trees. In order to find these, we implemented a grid search and found the one with the lowest Mean Squared Error;
 
-- Gradient Boosting:
+3.  **Gradient Boosting**: this model builds tree sequentially and so is able to correct the error of the previous ones. This too can find complex interactions between the predictors. However, it requires the tuning of three hyper-parameters: the number of trees used, the depth of each tree and the learning rate. Similarly to the random forest, we will use a grid search to tune these parameters..
 
-### How to compare models fairly ()
+### How to compare models fairly
 
-For random forest and gradient boosting, discuss the variable importance results and whether they align with the data exploration findings.
+To compare the models fairly we decided to apply the same evaluation metric to all models, the Mean Squared Error (MSE).
 
-
-explain why simply tuning each model on the full data and comparing training errors is insufficient, and describe the validation strategy you will adopt instead
+Furthermore, in order to avoid data leakage to our model, we split the data into two equal-sized sets: the training and testing. For models that required grid-searching, the training set was split into two subsets, a training one (with 80% size of the original one) and a validation one (20% the size).
 
 # Cost-complexity Pruned Decision Tree
 
 - Select the model complexity appropriately and show evidence supporting your choice (e.g., a plot of error vs. complexity parameter).
 - Interpret the fitted model: which predictors appear most important, and does this align with what you observed during data exploration?
+
+### Model complexity
+
+Lets now fit a Cost-complexity pruned decision tree on our training dataset. Firstly, the unpruned tree was first trained on the training set and then cross-validation was applied to determine the optimal number of terminal nodes. The plot below shows the relationship between the tree size and the deviance.
+
+```{r}
+#| echo: false
+library(tree)
+set.seed(1)
+tree.train <- tree(progr ~ ., data = train_df)
+summary(tree.train)
+cv.train <- cv.tree(tree.train)
+plot(cv.train$size, cv.train$dev, type = "b", xlab = "Tree Size", ylab = "Deviance", main = "Deviance vs Tree Size")
+```
+
+The optimal size was found to be 11. We can now visualize the pruned tree
+```{r}
+#| echo: false
+set.seed(1)
+tree.pruned <- prune.tree(tree.train, best = 11)
+plot(tree.pruned)
+text(tree.pruned, pretty = 0)
+```
+
+### Interpretation
+The pruned tree shows how the important predictors are the same found during the data exploration phase. The $TG$, $BMI$ and $BP$.
+
+### Performance
+The MSE of the pruned tree was of $3981.871$, while the unpruned MSE was of $4519.935$. This is a significant improvement.
 
 # Random Forest
 

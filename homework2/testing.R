@@ -1,18 +1,18 @@
 rm(list=ls()) 
 # Load Dataset ------------------------------------------------------------
 {
-    library(tidyverse)
     library(ISLR2)
     library(glmnet)
-    library(readr)
-    library(tree)
     library(randomForest)
     library(gbm)
-    library(rsample)
+    library(tree)
 }
 {
+    
+}
+{
+    library(readr)
     dataf <- read_delim("db.txt",delim = "\t", escape_double = FALSE, trim_ws = TRUE)
-
 }
 
 
@@ -36,6 +36,7 @@ corrplot(cor_matrix, method = "color", type = "upper", tl.col = "black", tl.srt 
 
 
 # Histogram for each numeric variable
+library(tidyverse)
 dataf %>%
     select(where(is.numeric)) %>%
     pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value") %>%
