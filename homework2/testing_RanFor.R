@@ -31,7 +31,7 @@
             set.seed(1)
             bag.train <- randomForest(progr ~ ., data = train_data, mtry = mtry, ntree = ntree, importance = TRUE)
             bag.pred <- predict(bag.train, newdata = validation_data)
-            mse <- compute_mse(yhat, validation_data$progr)
+            mse <- compute_mse(bag.pred, validation_data$progr)
             if (mse < best_mse) {
                 best_mse <- mse
                 best_ntree <- ntree
@@ -39,9 +39,9 @@
             }
         }
     }
-    print(best_mse) # 8135.746
-    print(best_ntree) # 50
-    print(best_mtry) # 1
+    print(best_mse) # 3851.084
+    print(best_ntree) # 300
+    print(best_mtry) # 2
 }
 
 set.seed(1)
